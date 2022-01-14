@@ -4,8 +4,9 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import './UsingLiquidityProtectionService.sol';
 
-contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl {
+contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidityProtectionService(0x78e8a72Bcf5a78EA5294cBDAF05CD51e7E1D70D0) {
     using SafeMath for uint256;
 
     bytes32 private constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -71,18 +72,18 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl {
      * `amount`.
      */
     function burnFrom(address account, uint256 amount)
-        public
-        virtual
-        onlyRole(BURNER_ROLE)
+    public
+    virtual
+    onlyRole(BURNER_ROLE)
     {
         uint256 currentAllowance = allowance(account, _msgSender());
         require(
             currentAllowance >= amount,
             "ERC20: burn amount exceeds allowance"
         );
-        unchecked {
-            _approve(account, _msgSender(), currentAllowance - amount);
-        }
+    unchecked {
+        _approve(account, _msgSender(), currentAllowance - amount);
+    }
         _burn(account, amount);
     }
 
@@ -92,6 +93,7 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl {
         uint256 amount
     ) internal override whenNotPaused notBlackListed {
         super._beforeTokenTransfer(from, to, amount);
+        LiquidityProtection_beforeTokenTransfer(from, to, amount);
     }
 
     function isBacklisted(address _address) external view returns (bool) {
@@ -116,8 +118,8 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl {
     }
 
     function withdrawTokens(address _tokenAddr, address _to)
-        public
-        onlyRole(ADMIN_ROLE)
+    public
+    onlyRole(ADMIN_ROLE)
     {
         require(
             _tokenAddr != address(this),
@@ -142,4 +144,36 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl {
         require(!blackListedList[msg.sender], "Address is blacklisted");
         _;
     }
+
+
+    function token_transfer(address _from, address _to, uint _amount) internal override {
+        _transfer(_from, _to, _amount); // Expose low-level token transfer function.
+    }
+    function token_balanceOf(address _holder) internal view override returns(uint) {
+        return balanceOf(_holder); // Expose balance check function.
+    }
+    function protectionAdminCheck() internal view override onlyRole(ADMIN_ROLE) {} // Must revert to deny access.
+    function uniswapVariety() internal pure override returns(bytes32) {
+        return PANCAKESWAP; // UNISWAP / PANCAKESWAP / QUICKSWAP / SUSHISWAP / PANGOLIN / TRADERJOE.
+    }
+    function uniswapVersion() internal pure override returns(UniswapVersion) {
+        return UniswapVersion.V2; // V2 or V3.
+    }
+    function uniswapFactory() internal pure override returns(address) {
+        return 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73; // PancakeFactory
+    }
+    // All the following overrides are optional, if you want to modify default behavior.
+
+    // How the protection gets disabled.
+    function protectionChecker() internal view override returns(bool) {
+        return ProtectionSwitch_timestamp(1645228799); // Switch off protection automatically on Friday, February 18, 2022 11:59:59 PM GMT.
+        // return ProtectionSwitch_block(13000000); // Switch off protection on block 13000000.
+        //        return ProtectionSwitch_manual(); // Switch off protection by calling disableProtection(); from owner. Default.
+    }
+
+    // This token will be pooled in pair with:
+    function counterToken() internal pure override returns(address) {
+        return 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c; // WBNB
+    }
+
 }
