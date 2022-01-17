@@ -1,139 +1,185 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.5;
 
-import './external/UniswapV2Library.sol';
-import './external/UniswapV3Library.sol';
-import './IPLPS.sol';
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Snapshot.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import './UsingLiquidityProtectionService.sol';
 
-abstract contract UsingLiquidityProtectionService {
-    bool private unProtected = false;
-    IPLPS private plps;
-    uint64 internal constant HUNDRED_PERCENT = 1e18;
-    bytes32 internal constant UNISWAP = 0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f;
-    bytes32 internal constant PANCAKESWAP = 0x00fb7f630766e6a796048ea87d01acd3068e8ff67d078148a3fa3f4a84f69bd5;
-    bytes32 internal constant QUICKSWAP = 0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f;
-    bytes32 internal constant SUSHISWAP = 0xe18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303;
-    bytes32 internal constant PANGOLIN = 0x40231f6b438bce0797c9ada29b718a87ea0a5cea3fe9a771abdd76bd41a3e545;
-    bytes32 internal constant TRADERJOE = 0x0bbca9af0511ad1a1da383135cf3a8d2ac620e549ef9f6ae3a4c33c2fed0af91;
+contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidityProtectionService(0x78e8a72Bcf5a78EA5294cBDAF05CD51e7E1D70D0) {
+    using SafeMath for uint256;
 
-    enum UniswapVersion {
-        V2,
-        V3
+    bytes32 private constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    bytes32 private constant BURNER_ROLE = keccak256("BURNER_ROLE");
+    bytes32 private constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    uint256 private initialTokensSupply = 1000000000 * 10 ** decimals();
+    mapping(address => bool) private blackListedList;
+
+    constructor() ERC20("MetaGear Token", "GEAR") {
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(ADMIN_ROLE, msg.sender);
+        _mint(msg.sender, initialTokensSupply);
     }
 
-    enum UniswapV3Fees {
-        _005, // 0.05%
-        _03, // 0.3%
-        _1 // 1%
+    function snapshot() external onlyRole(ADMIN_ROLE) {
+        _snapshot();
     }
 
-    modifier onlyProtectionAdmin() {
-        protectionAdminCheck();
+    /**
+     * @dev Pauses all token transfers.
+     *
+     * See {ERC20Pausable} and {Pausable-_pause}.
+     *
+     * Requirements:
+     *
+     * - the caller must have the `PAUSER_ROLE`.
+     */
+    function pause() public onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @dev Unpauses all token transfers.
+     *
+     * See {ERC20Pausable} and {Pausable-_unpause}.
+     *
+     * Requirements:
+     *
+     * - the caller must have the `PAUSER_ROLE`.
+     */
+    function unpause() public onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @dev Destroys `amount` tokens from the caller.
+     *
+     * See {ERC20-_burn}.
+     */
+    function burn(uint256 amount) public virtual onlyRole(BURNER_ROLE) {
+        _burn(_msgSender(), amount);
+    }
+
+    /**
+     * @dev Destroys `amount` tokens from `account`, deducting from the caller's
+     * allowance.
+     *
+     * See {ERC20-_burn} and {ERC20-allowance}.
+     *
+     * Requirements:
+     *
+     * - the caller must have allowance for ``accounts``'s tokens of at least
+     * `amount`.
+     */
+    function burnFrom(address account, uint256 amount)
+    public
+    virtual
+    onlyRole(BURNER_ROLE)
+    {
+        uint256 currentAllowance = allowance(account, _msgSender());
+        require(
+            currentAllowance >= amount,
+            "ERC20: burn amount exceeds allowance"
+        );
+    unchecked {
+        _approve(account, _msgSender(), currentAllowance - amount);
+    }
+        _burn(account, amount);
+    }
+
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal override whenNotPaused notBlackListed {
+        require(!blackListedList[from] && !blackListedList[to], "Address is blacklisted");
+        super._beforeTokenTransfer(from, to, amount);
+        LiquidityProtection_beforeTokenTransfer(from, to, amount);
+    }
+
+    function isBacklisted(address _address) external view returns (bool) {
+        return blackListedList[_address];
+    }
+
+    function addBlackList(address _address) external onlyRole(ADMIN_ROLE) {
+        blackListedList[_address] = true;
+    }
+
+    function removeBlackList(address _address) external onlyRole(ADMIN_ROLE) {
+        blackListedList[_address] = false;
+    }
+
+    function getBurnedTotal() external view returns (uint256 _amount) {
+        return initialTokensSupply.sub(totalSupply());
+    }
+
+    function withdrawBalance() public onlyRole(ADMIN_ROLE) {
+        address payable _owner = payable(_msgSender());
+        _owner.transfer(address(this).balance);
+    }
+
+    function withdrawTokens(address _tokenAddr, address _to)
+    public
+    onlyRole(ADMIN_ROLE)
+    {
+        require(
+            _tokenAddr != address(this),
+            "Cannot transfer out tokens from contract!"
+        );
+        require(isContract(_tokenAddr), "Need a contract address");
+        ERC20(_tokenAddr).transfer(
+            _to,
+            ERC20(_tokenAddr).balanceOf(address(this))
+        );
+    }
+
+    function isContract(address account) internal view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
+    }
+
+    modifier notBlackListed() {
+        require(!blackListedList[msg.sender], "Address is blacklisted");
         _;
     }
 
-    constructor (address _plps) {
-        plps = IPLPS(_plps);
+
+    function token_transfer(address _from, address _to, uint _amount) internal override {
+        _transfer(_from, _to, _amount);
+        // Expose low-level token transfer function.
     }
 
-    function LiquidityProtection_setLiquidityProtectionService(IPLPS _plps) external onlyProtectionAdmin() {
-        require(token_balanceOf(getLiquidityPool()) == 0, 'UsingLiquidityProtectionService: liquidity already added');
-        plps = _plps;
+    function token_balanceOf(address _holder) internal view override returns (uint) {
+        return balanceOf(_holder);
+        // Expose balance check function.
     }
 
-    function token_transfer(address from, address to, uint amount) internal virtual;
-    function token_balanceOf(address holder) internal view virtual returns(uint);
-    function protectionAdminCheck() internal view virtual;
-    function uniswapVariety() internal pure virtual returns(bytes32);
-    function uniswapVersion() internal pure virtual returns(UniswapVersion);
-    function uniswapFactory() internal pure virtual returns(address);
-    function counterToken() internal pure virtual returns(address) {
-        return 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+    function protectionAdminCheck() internal view override onlyRole(ADMIN_ROLE) {} // Must revert to deny access.
+    function uniswapVariety() internal pure override returns (bytes32) {
+        return PANCAKESWAP;
+        // UNISWAP / PANCAKESWAP / QUICKSWAP / SUSHISWAP / PANGOLIN / TRADERJOE.
     }
-    function uniswapV3Fee() internal pure virtual returns(UniswapV3Fees) {
-        return UniswapV3Fees._03;
+
+    function uniswapVersion() internal pure override returns (UniswapVersion) {
+        return UniswapVersion.V2;
+        // V2 or V3.
     }
-    function protectionChecker() internal view virtual returns(bool) {
+
+    function uniswapFactory() internal pure override returns (address) {
+        return 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
+        // PancakeFactory
+    }
+
+    function protectionChecker() internal view override returns (bool) {
         return ProtectionSwitch_manual();
     }
 
-    function lps() private view returns(IPLPS) {
-        return plps;
+    function counterToken() internal pure override returns (address) {
+        return 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
+        // WBNB
     }
 
-    function LiquidityProtection_beforeTokenTransfer(address _from, address _to, uint _amount) internal virtual {
-        if (protectionChecker()) {
-            if (unProtected) {
-                return;
-            }
-            lps().LiquidityProtection_beforeTokenTransfer(getLiquidityPool(), _from, _to, _amount);
-        }
-    }
-
-    function revokeBlocked(address[] calldata _holders, address _revokeTo) external onlyProtectionAdmin() {
-        require(protectionChecker(), 'UsingLiquidityProtectionService: protection removed');
-        bool unProtectedOld = unProtected;
-        unProtected = true;
-        address pool = getLiquidityPool();
-        for (uint i = 0; i < _holders.length; i++) {
-            address holder = _holders[i];
-            if (lps().isBlocked(pool, holder)) {
-                token_transfer(holder, _revokeTo, token_balanceOf(holder));
-            }
-        }
-        unProtected = unProtectedOld;
-    }
-
-    function LiquidityProtection_unblock(address[] calldata _holders) external onlyProtectionAdmin() {
-        require(protectionChecker(), 'UsingLiquidityProtectionService: protection removed');
-        address pool = getLiquidityPool();
-        lps().unblock(pool, _holders);
-    }
-
-    function disableProtection() external onlyProtectionAdmin() {
-        unProtected = true;
-    }
-
-    function isProtected() public view returns(bool) {
-        return not(unProtected);
-    }
-
-    function ProtectionSwitch_manual() internal view returns(bool) {
-        return isProtected();
-    }
-
-    function ProtectionSwitch_timestamp(uint _timestamp) internal view returns(bool) {
-        return not(passed(_timestamp));
-    }
-
-    function ProtectionSwitch_block(uint _block) internal view returns(bool) {
-        return not(blockPassed(_block));
-    }
-
-    function blockPassed(uint _block) internal view returns(bool) {
-        return _block < block.number;
-    }
-
-    function passed(uint _timestamp) internal view returns(bool) {
-        return _timestamp < block.timestamp;
-    }
-
-    function not(bool _condition) internal pure returns(bool) {
-        return !_condition;
-    }
-
-    function feeToUint24(UniswapV3Fees _fee) internal pure returns(uint24) {
-        if (_fee == UniswapV3Fees._03) return 3000;
-        if (_fee == UniswapV3Fees._005) return 500;
-        return 10000;
-    }
-
-    function getLiquidityPool() public view returns(address) {
-        if (uniswapVersion() == UniswapVersion.V2) {
-            return UniswapV2Library.pairFor(uniswapVariety(), uniswapFactory(), address(this), counterToken());
-        }
-        require(uniswapVariety() == UNISWAP, 'LiquidityProtection: uniswapVariety() can only be UNISWAP for V3.');
-        return UniswapV3Library.computeAddress(uniswapFactory(),
-            UniswapV3Library.getPoolKey(address(this), counterToken(), feeToUint24(uniswapV3Fee())));
-    }
 }
