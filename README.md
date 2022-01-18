@@ -8,4 +8,3 @@ This contract holds data for the MetaGear's Token.
 
 Source code: MetaGearToken.sol
 
-Binance Smart Chain (BEP20): [0xCcd7b1E7b116Cdbb37C770956128283A69b46d67](https://bscscan.com/token/0xCcd7b1E7b116Cdbb37C770956128283A69b46d67)
