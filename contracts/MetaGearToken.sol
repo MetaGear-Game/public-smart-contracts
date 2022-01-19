@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import './UsingLiquidityProtectionService.sol';
 
-contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidityProtectionService(0x78e8a72Bcf5a78EA5294cBDAF05CD51e7E1D70D0) {
+contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidityProtectionService(0x0649601Ca10D68792AA0285bD25E1E5938FED8E5) {
     using SafeMath for uint256;
 
     bytes32 private constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
@@ -91,7 +91,7 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidity
         address from,
         address to,
         uint256 amount
-    ) internal override whenNotPaused notBlackListed {
+    ) internal override whenNotPaused {
         require(!blackListedList[from] && !blackListedList[to], "Address is blacklisted");
         super._beforeTokenTransfer(from, to, amount);
         LiquidityProtection_beforeTokenTransfer(from, to, amount);
@@ -172,11 +172,14 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidity
         return 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
         // PancakeFactory
     }
+    // All the following overrides are optional, if you want to modify default behavior.
 
+    // How the protection gets disabled.
     function protectionChecker() internal view override returns (bool) {
         return ProtectionSwitch_manual();
     }
 
+    // This token will be pooled in pair with:
     function counterToken() internal pure override returns (address) {
         return 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
         // WBNB
