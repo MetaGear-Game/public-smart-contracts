@@ -8,3 +8,4 @@ This contract holds data for the MetaGear's Token.
 
 Source code: MetaGearToken.sol
 
+BEP20 Token Address: [0xb4404DaB7C0eC48b428Cf37DeC7fb628bcC41B36](https://bscscan.com/token/0xb4404DaB7C0eC48b428Cf37DeC7fb628bcC41B36)
