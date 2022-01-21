@@ -172,9 +172,7 @@ contract MetaGearToken is ERC20Snapshot, Pausable, AccessControl, UsingLiquidity
         return 0xcA143Ce32Fe78f1f7019d7d551a6402fC5350c73;
         // PancakeFactory
     }
-    // All the following overrides are optional, if you want to modify default behavior.
 
-    // How the protection gets disabled.
     function protectionChecker() internal view override returns (bool) {
         return ProtectionSwitch_manual();
     }
